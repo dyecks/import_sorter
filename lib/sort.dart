@@ -12,6 +12,7 @@ ImportSortData sortImports(
   bool exitIfChanged,
   bool noComments, {
   String? filePath,
+  List<String> workspacePackages = const [],
 }) {
   String dartImportComment(bool emojis) =>
       '//${emojis ? ' 🎯 ' : ' '}Dart imports:';
@@ -19,6 +20,8 @@ ImportSortData sortImports(
       '//${emojis ? ' 🐦 ' : ' '}Flutter imports:';
   String packageImportComment(bool emojis) =>
       '//${emojis ? ' 📦 ' : ' '}Package imports:';
+  String monorepoImportComment(bool emojis) =>
+      '//${emojis ? ' 📁 ' : ' '}Monorepo imports:';
   String projectImportComment(bool emojis) =>
       '//${emojis ? ' 🌎 ' : ' '}Project imports:';
 
@@ -28,6 +31,7 @@ ImportSortData sortImports(
   final dartImports = <String>[];
   final flutterImports = <String>[];
   final packageImports = <String>[];
+  final monorepoImports = <String>[];
   final projectRelativeImports = <String>[];
   final projectImports = <String>[];
 
@@ -35,6 +39,7 @@ ImportSortData sortImports(
       dartImports.isEmpty &&
       flutterImports.isEmpty &&
       packageImports.isEmpty &&
+      monorepoImports.isEmpty &&
       projectImports.isEmpty &&
       projectRelativeImports.isEmpty;
 
@@ -53,12 +58,29 @@ ImportSortData sortImports(
         !isMultiLineString) {
       if (lines[i].contains('dart:')) {
         dartImports.add(lines[i]);
-      } else if (lines[i].contains('package:flutter/')) {
+      } else if (lines[i].contains('package:flutter/') ||
+          lines[i].contains('package:flutter_localizations/') ||
+          lines[i].contains('package:flutter_test/') ||
+          lines[i].contains('package:flutter_web_plugins/') ||
+          lines[i].contains('package:flutter_driver/')) {
         flutterImports.add(lines[i]);
       } else if (lines[i].contains('package:$packageName/')) {
         projectImports.add(lines[i]);
       } else if (lines[i].contains('package:')) {
-        packageImports.add(lines[i]);
+        // Check if it's a monorepo package
+        var isMonorepoPackage = false;
+        for (final workspacePackage in workspacePackages) {
+          if (lines[i].contains('package:$workspacePackage/')) {
+            isMonorepoPackage = true;
+            break;
+          }
+        }
+
+        if (isMonorepoPackage) {
+          monorepoImports.add(lines[i]);
+        } else {
+          packageImports.add(lines[i]);
+        }
       } else {
         projectRelativeImports.add(lines[i]);
       }
@@ -66,10 +88,12 @@ ImportSortData sortImports(
         (lines[i] == dartImportComment(false) ||
             lines[i] == flutterImportComment(false) ||
             lines[i] == packageImportComment(false) ||
+            lines[i] == monorepoImportComment(false) ||
             lines[i] == projectImportComment(false) ||
             lines[i] == dartImportComment(true) ||
             lines[i] == flutterImportComment(true) ||
             lines[i] == packageImportComment(true) ||
+            lines[i] == monorepoImportComment(true) ||
             lines[i] == projectImportComment(true) ||
             lines[i] == '// 📱 Flutter imports:') &&
         lines[i + 1].startsWith('import ') &&
@@ -124,10 +148,21 @@ ImportSortData sortImports(
     packageImports.sort();
     sortedLines.addAll(packageImports);
   }
-  if (projectImports.isNotEmpty || projectRelativeImports.isNotEmpty) {
+  if (monorepoImports.isNotEmpty) {
     if (dartImports.isNotEmpty ||
         flutterImports.isNotEmpty ||
         packageImports.isNotEmpty) {
+      sortedLines.add('');
+    }
+    if (!noComments) sortedLines.add(monorepoImportComment(emojis));
+    monorepoImports.sort();
+    sortedLines.addAll(monorepoImports);
+  }
+  if (projectImports.isNotEmpty || projectRelativeImports.isNotEmpty) {
+    if (dartImports.isNotEmpty ||
+        flutterImports.isNotEmpty ||
+        packageImports.isNotEmpty ||
+        monorepoImports.isNotEmpty) {
       sortedLines.add('');
     }
     if (!noComments) sortedLines.add(projectImportComment(emojis));

@@ -1,7 +1,12 @@
-## 4.7.0
+## 5.0.0
 
-- Fix to be usable with monorepos using Pub workspaces.
-- Scan in packages folder for multi-apps architecture
+- **BREAKING:** Add Monorepo imports category - imports from workspace packages are now grouped separately
+- Add full support for Dart workspaces and monorepos
+- Add automatic workspace detection and processing
+- Add workspace root configuration inheritance with package-level override support
+- Group Flutter SDK packages (`flutter_localizations`, `flutter_test`, `flutter_driver`, `flutter_web_plugins`) with Flutter imports
+- Improve import organization with 5 categories: Dart → Flutter → Package → Monorepo → Project
+- Add enhanced terminal output with modern summary display
 
 ## 4.6.0
 

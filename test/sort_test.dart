@@ -6,6 +6,7 @@ import 'package:import_sorter/sort.dart';
 
 void switcher(bool emojis, bool noComments) {
   const packageName = 'import_sorter_test';
+  const workspacePackages = ['common_utils', 'design_system'];
 
   // Imports:
   const dartImports = '''
@@ -18,10 +19,23 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+''';
+  const flutterSdkImports = '''
+import 'package:flutter/material.dart';
+import 'package:flutter_driver/flutter_driver.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 ''';
   const packageImports = '''
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+''';
+  const monorepoImports = '''
+import 'package:common_utils/helpers.dart';
+import 'package:design_system/widgets.dart';
 ''';
   const projectImports = '''
 import 'package:import_sorter_test/anotherFile2.dart';
@@ -49,6 +63,8 @@ void main(List<String> args) async {
       noComments ? '' : '// ${emojis ? '🐦 ' : ''}Flutter imports:\n';
   final packageImportComment =
       noComments ? '' : '// ${emojis ? '📦 ' : ''}Package imports:\n';
+  final monorepoImportComment =
+      noComments ? '' : '// ${emojis ? '📁 ' : ''}Monorepo imports:\n';
   final projectImportComment =
       noComments ? '' : '// ${emojis ? '🌎 ' : ''}Project imports:\n';
 
@@ -62,6 +78,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '\n',
       );
@@ -77,6 +94,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         'enum HomeEvent { showInfo, showDiscover, showProfile }\n\n',
       );
@@ -93,6 +111,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '$dartImportComment$dartImports\n$flutterImportComment$flutterImports\n$packageImportComment$packageImports\n$projectImportComment$projectImports\n',
       );
@@ -108,6 +127,7 @@ void main(List<String> args) async {
             emojis,
             false,
             noComments,
+            workspacePackages: workspacePackages,
           ).sortedFile,
           '$sampleProgram\n');
     },
@@ -122,6 +142,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '$dartImportComment$dartImports\n$sampleProgram\n',
       );
@@ -137,6 +158,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '$flutterImportComment$flutterImports\n$sampleProgram\n',
       );
@@ -152,8 +174,25 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '$packageImportComment$packageImports\n$sampleProgram\n',
+      );
+    },
+  );
+  test(
+    'Monorepo Imports',
+    () {
+      expect(
+        sortImports(
+          '$monorepoImports\n$sampleProgram'.split('\n'),
+          packageName,
+          emojis,
+          false,
+          noComments,
+          workspacePackages: workspacePackages,
+        ).sortedFile,
+        '$monorepoImportComment$monorepoImports\n$sampleProgram\n',
       );
     },
   );
@@ -167,6 +206,7 @@ void main(List<String> args) async {
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
         '$projectImportComment$projectImports\n$sampleProgram\n',
       );
@@ -177,14 +217,15 @@ void main(List<String> args) async {
     () {
       expect(
         sortImports(
-          '$projectImports\n$packageImports\n$dartImports\n$flutterImports\n$sampleProgram'
+          '$projectImports\n$monorepoImports\n$packageImports\n$dartImports\n$flutterImports\n$sampleProgram'
               .split('\n'),
           packageName,
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
-        '$dartImportComment$dartImports\n$flutterImportComment$flutterImports\n$packageImportComment$packageImports\n$projectImportComment$projectImports\n$sampleProgram\n',
+        '$dartImportComment$dartImports\n$flutterImportComment$flutterImports\n$packageImportComment$packageImports\n$monorepoImportComment$monorepoImports\n$projectImportComment$projectImports\n$sampleProgram\n',
       );
     },
   );
@@ -193,14 +234,31 @@ void main(List<String> args) async {
     () {
       expect(
         sortImports(
-          'library import_sorter;\n$projectImports\n$packageImports\n$dartImports\n$flutterImports\n$sampleProgram'
+          'library import_sorter;\n$projectImports\n$monorepoImports\n$packageImports\n$dartImports\n$flutterImports\n$sampleProgram'
               .split('\n'),
           packageName,
           emojis,
           false,
           noComments,
+          workspacePackages: workspacePackages,
         ).sortedFile,
-        'library import_sorter;\n\n$dartImportComment$dartImports\n$flutterImportComment$flutterImports\n$packageImportComment$packageImports\n$projectImportComment$projectImports\n$sampleProgram\n',
+        'library import_sorter;\n\n$dartImportComment$dartImports\n$flutterImportComment$flutterImports\n$packageImportComment$packageImports\n$monorepoImportComment$monorepoImports\n$projectImportComment$projectImports\n$sampleProgram\n',
+      );
+    },
+  );
+  test(
+    'Flutter SDK packages are grouped with Flutter',
+    () {
+      expect(
+        sortImports(
+          '$flutterSdkImports\n$sampleProgram'.split('\n'),
+          packageName,
+          emojis,
+          false,
+          noComments,
+          workspacePackages: workspacePackages,
+        ).sortedFile,
+        '$flutterImportComment$flutterSdkImports\n$sampleProgram\n',
       );
     },
   );

@@ -29,12 +29,13 @@ This project needs a maintainer as I no longer work with dart and flutter. Pleas
 ![test](https://github.com/fluttercommunity/import_sorter/workflows/test/badge.svg)
 ![format](https://github.com/fluttercommunity/import_sorter/workflows/format/badge.svg)
 
-🎯 Dart package to automatically organize your dart imports. Any dart project supported! Will sorts imports alphabetically and then group them in the following order:
+🎯 Dart package to automatically organize your dart imports. Any dart project supported! Includes full support for Dart workspaces and monorepos. Will sort imports alphabetically and then group them in the following order:
 
 1. Dart imports
 2. Flutter imports
 3. Package imports
-4. Project imports
+4. Monorepo imports (for workspace packages)
+5. Project imports
 
 Below is an example:
 
@@ -79,9 +80,34 @@ import 'package:example_app/anotherFile2.dart';
 import 'anotherFile.dart';
 ```
 
+### With Monorepo/Workspace
+
+If you're using Dart workspaces, imports from your workspace packages will be grouped separately:
+
+```dart
+// Dart imports:
+import 'dart:async';
+
+// Flutter imports:
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+
+// Package imports:
+import 'package:http/http.dart';
+import 'package:provider/provider.dart';
+
+// Monorepo imports:
+import 'package:my_workspace_package_1/utils.dart';
+import 'package:my_workspace_package_2/widgets.dart';
+
+// Project imports:
+import 'package:my_app/models/user.dart';
+import '../helpers/constants.dart';
+```
+
 ## 🚀 Installing
 
-Simply add `import_sorter: ^4.7.0` to your `pubspec.yaml`'s `dev_dependencies`.
+Simply add `import_sorter: ^5.0.0` to your `pubspec.yaml`'s `dev_dependencies`.
 
 ## 🏃‍♂️ Running
 
@@ -111,6 +137,38 @@ import_sorter:
 ```
 
 If you need another example check the [example app's import_sorter configuration](https://github.com/fluttercommunity/import_sorter/blob/master/example/example_app/pubspec.yaml#L76).
+
+### 📦 Workspace/Monorepo Support
+
+Import sorter now has full support for Dart workspaces! Configuration defined in the workspace root `pubspec.yaml` will be automatically applied to all packages in the workspace. Individual packages can override these settings in their own `pubspec.yaml`.
+
+**Workspace root `pubspec.yaml`:**
+```yaml
+name: my_monorepo
+
+workspace:
+  - packages/*
+  - apps/*
+
+import_sorter:
+  comments: false  # Applied to all packages
+  emojis: true     # Applied to all packages
+```
+
+**Individual package override (optional):**
+```yaml
+# packages/my_package/pubspec.yaml
+name: my_package
+
+import_sorter:
+  comments: true  # Overrides workspace setting for this package only
+```
+
+**Configuration priority (highest to lowest):**
+1. Command-line flags (`--no-comments`, `--emojis`)
+2. Package-level configuration
+3. Workspace root configuration
+4. Default values
 
 ## 🚨 [`pre-commit`](https://pre-commit.com/) Hook
 
