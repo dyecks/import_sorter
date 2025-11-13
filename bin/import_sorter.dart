@@ -41,8 +41,10 @@ void main(List<String> args) {
   stopwatch.start();
 
   final pubspecLockFile = File('$currentPath/pubspec.lock');
-  final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
-  dependencies.addAll(pubspecLock['packages'].keys);
+  if (pubspecLockFile.existsSync()) {
+    final pubspecLock = loadYaml(pubspecLockFile.readAsStringSync());
+    dependencies.addAll(pubspecLock['packages'].keys);
+  }
 
   var emojis = false;
   var noComments = false;
