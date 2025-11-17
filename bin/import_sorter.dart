@@ -30,7 +30,10 @@ void main(List<String> args) {
 
   if (workspacePackages.isNotEmpty) {
     // Process each package in the workspace
-    stdout.writeln('📦 Detected workspace with ${workspacePackages.length} packages\n');
+    stdout.writeln('');
+    stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
+    stdout.writeln('  ✨ ${'Workspace with ${workspacePackages.length} packages'.green().bold()}');
+    stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
 
     final globalStopwatch = Stopwatch();
     globalStopwatch.start();
@@ -47,14 +50,10 @@ void main(List<String> args) {
     final workspaceConfig = _getWorkspaceConfig(currentPath, argResults);
 
     for (final packagePath in workspacePackages) {
-      final packageName = _getPackageName(packagePath);
-      stdout.writeln('Processing package: $packageName ($packagePath)');
-
       final result = _processPackage(packagePath, args, argResults,
           workspacePackageNames: workspacePackageNames,
           workspaceConfig: workspaceConfig);
       totalSortedFiles += result;
-      stdout.writeln('');
     }
 
     globalStopwatch.stop();
@@ -62,9 +61,8 @@ void main(List<String> args) {
     final String totalTime = '${globalStopwatch.elapsed.inSeconds}.${globalStopwatch.elapsedMilliseconds.toString().padLeft(3, '0')}s';
 
     // Final summary with emphasis
-    stdout.writeln('');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
-    stdout.writeln('  ✨ ${'WORKSPACE SUMMARY'.green().bold()}');
+    stdout.writeln('  ✨ ${'Workspace Summary'.green().bold()}');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
     stdout.writeln('  📦 Packages processed: ${workspacePackages.length.toString().green().bold()}');
     stdout.writeln('  📝 Files sorted: ${totalSortedFiles.toString().green().bold()}');
@@ -150,9 +148,6 @@ int _processPackage(
   final containsRegistrant = dartFiles
       .containsKey('$packagePath/lib/generated_plugin_registrant.dart');
 
-  stdout.writeln('contains flutter: $containsFlutter');
-  stdout.writeln('contains registrant: $containsRegistrant');
-
   if (containsFlutter && containsRegistrant) {
     dartFiles.remove('$packagePath/lib/generated_plugin_registrant.dart');
   }
@@ -162,7 +157,12 @@ int _processPackage(
         RegExp(pattern).hasMatch(key.replaceFirst(packagePath, '')));
   }
 
-  stdout.write('┏━━ Sorting ${dartFiles.length} dart files');
+  // Display package info in a single line (only for workspace packages)
+  if (workspacePackageNames.isNotEmpty) {
+    final flutterIcon = containsFlutter ? '🐦' : '  ';
+    final registrantIcon = containsRegistrant ? '📄' : '  ';
+    stdout.writeln('  📦 $packageName  $flutterIcon $registrantIcon');
+  }
 
   // Sorting and writing to files
   final sortedFiles = [];
@@ -192,25 +192,37 @@ int _processPackage(
   stopwatch.stop();
 
   // Outputting results
-  if (sortedFiles.length > 1) {
-    stdout.write('\n');
-  }
-  for (int i = 0; i < sortedFiles.length; i++) {
-    final file = dartFiles[sortedFiles[i]];
+  if (workspacePackageNames.isNotEmpty) {
+    // Workspace mode: compact output
+    if (sortedFiles.isEmpty) {
+      stdout.writeln('     ${'No files sorted'.gray()}');
+    } else {
+      for (int i = 0; i < sortedFiles.length; i++) {
+        final file = dartFiles[sortedFiles[i]];
+        final relativePath = file?.path.replaceFirst(packagePath, '') ?? '';
+        stdout.writeln('     $success ${relativePath.replaceFirst('/', '')}');
+      }
+    }
+    stdout.writeln('');
+  } else {
+    // Single package mode: detailed output with summary
+    if (sortedFiles.length > 1) {
+      stdout.write('\n');
+    }
+    for (int i = 0; i < sortedFiles.length; i++) {
+      final file = dartFiles[sortedFiles[i]];
+      stdout.write(
+          '${sortedFiles.length == 1 ? '\n' : ''}┃  ${i == sortedFiles.length - 1 ? '┗' : '┣'}━━ $success Sorted imports for ${file?.path.replaceFirst(packagePath, '')}/');
+      String filename = file!.path.split(Platform.pathSeparator).last;
+      stdout.write('$filename\n');
+    }
+
+    if (sortedFiles.isEmpty) {
+      stdout.write('\n');
+    }
     stdout.write(
-        '${sortedFiles.length == 1 ? '\n' : ''}┃  ${i == sortedFiles.length - 1 ? '┗' : '┣'}━━ $success Sorted imports for ${file?.path.replaceFirst(packagePath, '')}/');
-    String filename = file!.path.split(Platform.pathSeparator).last;
-    stdout.write('$filename\n');
-  }
+        '┗━━ $success Sorted ${sortedFiles.length} files in ${stopwatch.elapsed.inSeconds}.${stopwatch.elapsedMilliseconds} seconds\n');
 
-  if (sortedFiles.isEmpty) {
-    stdout.write('\n');
-  }
-  stdout.write(
-      '┗━━ $success Sorted ${sortedFiles.length} files in ${stopwatch.elapsed.inSeconds}.${stopwatch.elapsedMilliseconds} seconds\n');
-
-  // Don't show final summary if in workspace mode (summary is shown at workspace level)
-  if (workspacePackageNames.isEmpty) {
     final String totalTime = '${stopwatch.elapsed.inSeconds}.${stopwatch.elapsedMilliseconds.toString().padLeft(3, '0')}s';
 
     // Final summary with emphasis for single package
