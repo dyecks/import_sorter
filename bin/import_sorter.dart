@@ -106,7 +106,7 @@ void main(List<String> args) {
         }
         // Normalize to forward slashes for consistent display
         displayPath = displayPath.replaceAll('\\', '/');
-        stdout.writeln('     ${'✕'.yellow()} $displayPath');
+        stdout.writeln('     ❌ $displayPath');
       }
     }
 
@@ -355,7 +355,7 @@ ProcessResult _processPackage(
         }
         // Normalize to forward slashes for consistent display
         displayPath = displayPath.replaceAll('\\', '/');
-        stdout.writeln('     ${'✕'.yellow()} $displayPath');
+        stdout.writeln('     ❌ $displayPath');
       }
     }
 
