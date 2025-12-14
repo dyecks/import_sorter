@@ -30,6 +30,8 @@ void outputHelp() {
   stdout.write(
       "\n  --exit-if-changed  Return an error if any file isn't sorted. Good for CI.");
   stdout.write(
-      "\n  --no-comments      Don't put any comments before the imports.\n");
+      "\n  --no-comments      Don't put any comments before the imports.");
+  stdout.write(
+      '\n  --list-ignored, -l List all ignored files (generated files and .gitignore matches).\n');
   exit(0);
 }

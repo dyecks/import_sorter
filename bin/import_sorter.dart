@@ -10,6 +10,26 @@ import 'package:yaml/yaml.dart';
 import 'package:import_sorter/args.dart' as local_args;
 import 'package:import_sorter/sort.dart' as sort;
 
+/// Result class to hold processing results
+class ProcessResult {
+  final int sortedCount;
+  final List<String> ignoredFiles;
+
+  ProcessResult(this.sortedCount, this.ignoredFiles);
+}
+
+/// Patterns for generated files that should be ignored
+final List<String> _generatedFilePatterns = [
+  r'\.g\.dart$',
+  r'\.freezed\.dart$',
+  r'\.gr\.dart$',
+  r'\.gen\.dart$',
+  r'\.mocks\.dart$',
+  r'\.config\.dart$',
+  r'\.chopper\.dart$',
+  r'\.reflectable\.dart$',
+];
+
 void main(List<String> args) {
   // Parsing arguments
   final parser = ArgParser();
@@ -18,10 +38,13 @@ void main(List<String> args) {
   parser.addFlag('help', abbr: 'h', negatable: false);
   parser.addFlag('exit-if-changed', negatable: false);
   parser.addFlag('no-comments', negatable: false);
+  parser.addFlag('list-ignored', abbr: 'l', negatable: false);
   final argResults = parser.parse(args).arguments;
   if (argResults.contains('-h') || argResults.contains('--help')) {
     local_args.outputHelp();
   }
+
+  final listIgnored = argResults.contains('-l') || argResults.contains('--list-ignored');
 
   final currentPath = Directory.current.path;
 
@@ -39,6 +62,7 @@ void main(List<String> args) {
     globalStopwatch.start();
 
     var totalSortedFiles = 0;
+    final allIgnoredFiles = <String>[];
 
     // Get all workspace package names for import classification
     final workspacePackageNames = workspacePackages
@@ -52,8 +76,10 @@ void main(List<String> args) {
     for (final packagePath in workspacePackages) {
       final result = _processPackage(packagePath, args, argResults,
           workspacePackageNames: workspacePackageNames,
-          workspaceConfig: workspaceConfig);
-      totalSortedFiles += result;
+          workspaceConfig: workspaceConfig,
+          listIgnored: listIgnored);
+      totalSortedFiles += result.sortedCount;
+      allIgnoredFiles.addAll(result.ignoredFiles);
     }
 
     globalStopwatch.stop();
@@ -66,23 +92,40 @@ void main(List<String> args) {
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
     stdout.writeln('  📦 Packages processed: ${workspacePackages.length.toString().green().bold()}');
     stdout.writeln('  📝 Files sorted: ${totalSortedFiles.toString().green().bold()}');
+    stdout.writeln('  🚫 Files ignored: ${allIgnoredFiles.length.toString().green().bold()}');
     stdout.writeln('  ⏱️  Time elapsed: ${totalTime.green().bold()}');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
+
+    // List ignored files if requested
+    if (listIgnored && allIgnoredFiles.isNotEmpty) {
+      stdout.writeln('  📋 ${'Ignored files:'.yellow()}');
+      for (final file in allIgnoredFiles) {
+        var displayPath = file.replaceFirst(currentPath, '');
+        if (displayPath.startsWith('/') || displayPath.startsWith('\\')) {
+          displayPath = displayPath.substring(1);
+        }
+        // Normalize to forward slashes for consistent display
+        displayPath = displayPath.replaceAll('\\', '/');
+        stdout.writeln('     ${'✕'.yellow()} $displayPath');
+      }
+    }
+
     stdout.writeln('');
     return;
   }
 
   // Standard single package processing
-  _processPackage(currentPath, args, argResults);
+  _processPackage(currentPath, args, argResults, listIgnored: listIgnored);
 }
 
 /// Process a single package (works for both standalone projects and workspace packages)
-int _processPackage(
+ProcessResult _processPackage(
     String packagePath,
     List<String> args,
     List<String> argResults, {
     List<String> workspacePackageNames = const [],
     Map<String, dynamic>? workspaceConfig,
+    bool listIgnored = false,
   }) {
   /*
   Getting the package name and dependencies/dev_dependencies
@@ -92,7 +135,7 @@ int _processPackage(
   final pubspecYamlFile = File('$packagePath/pubspec.yaml');
   if (!pubspecYamlFile.existsSync()) {
     stdout.writeln('⚠️  Skipping $packagePath - no pubspec.yaml found');
-    return 0;
+    return ProcessResult(0, []);
   }
 
   final pubspecYaml = loadYaml(pubspecYamlFile.readAsStringSync());
@@ -148,14 +191,79 @@ int _processPackage(
   final containsRegistrant = dartFiles
       .containsKey('$packagePath/lib/generated_plugin_registrant.dart');
 
+  // Track ignored files (using Set to avoid duplicates)
+  final ignoredFilesSet = <String>{};
+
+  // Check generated_plugin_registrant.dart
   if (containsFlutter && containsRegistrant) {
-    dartFiles.remove('$packagePath/lib/generated_plugin_registrant.dart');
+    ignoredFilesSet.add('$packagePath/lib/generated_plugin_registrant.dart');
   }
 
-  for (final pattern in ignoredFiles) {
-    dartFiles.removeWhere((key, _) =>
-        RegExp(pattern).hasMatch(key.replaceFirst(packagePath, '')));
+  // Load .gitignore patterns
+  final gitignorePatterns = _loadGitignorePatterns(packagePath);
+
+  // Check all dart files against all ignore criteria
+  for (final filePath in dartFiles.keys.toList()) {
+    var shouldIgnore = false;
+
+    // Check if already marked as ignored (registrant)
+    if (ignoredFilesSet.contains(filePath)) {
+      shouldIgnore = true;
+    }
+
+    // Check .gitignore patterns
+    if (!shouldIgnore) {
+      // Normalize path to use / for gitignore matching
+      var relativePath = filePath.replaceFirst(packagePath, '');
+      if (Platform.isWindows) {
+        relativePath = relativePath.replaceAll(r'\', '/');
+      }
+      // Remove leading slash if present
+      if (relativePath.startsWith('/')) {
+        relativePath = relativePath.substring(1);
+      }
+
+      for (final pattern in gitignorePatterns) {
+        if (_matchesGitignorePattern(relativePath, pattern)) {
+          shouldIgnore = true;
+          break;
+        }
+      }
+    }
+
+    // Check generated files patterns
+    if (!shouldIgnore) {
+      for (final pattern in _generatedFilePatterns) {
+        if (RegExp(pattern).hasMatch(filePath)) {
+          shouldIgnore = true;
+          break;
+        }
+      }
+    }
+
+    // Check custom ignored patterns from config
+    if (!shouldIgnore) {
+      for (final pattern in ignoredFiles) {
+        if (RegExp(pattern).hasMatch(filePath.replaceFirst(packagePath, ''))) {
+          shouldIgnore = true;
+          break;
+        }
+      }
+    }
+
+    // Add to ignored set if should be ignored
+    if (shouldIgnore) {
+      ignoredFilesSet.add(filePath);
+    }
   }
+
+  // Remove all ignored files from dartFiles
+  for (final ignoredFile in ignoredFilesSet) {
+    dartFiles.remove(ignoredFile);
+  }
+
+  // Convert set to list for display
+  final ignoredFilesList = ignoredFilesSet.toList();
 
   // Display package info in a single line (only for workspace packages)
   if (workspacePackageNames.isNotEmpty) {
@@ -205,38 +313,56 @@ int _processPackage(
     }
     stdout.writeln('');
   } else {
-    // Single package mode: detailed output with summary
-    if (sortedFiles.length > 1) {
-      stdout.write('\n');
-    }
-    for (int i = 0; i < sortedFiles.length; i++) {
-      final file = dartFiles[sortedFiles[i]];
-      stdout.write(
-          '${sortedFiles.length == 1 ? '\n' : ''}┃  ${i == sortedFiles.length - 1 ? '┗' : '┣'}━━ $success Sorted imports for ${file?.path.replaceFirst(packagePath, '')}/');
-      String filename = file!.path.split(Platform.pathSeparator).last;
-      stdout.write('$filename\n');
-    }
+    // Single package mode: similar to workspace output
+    stdout.writeln('');
+    stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
+    stdout.writeln('  ✨ ${'Single Package'.green().bold()}');
+    stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
+
+    final flutterIcon = containsFlutter ? '🐦' : '  ';
+    final registrantIcon = containsRegistrant ? '📄' : '  ';
+    stdout.writeln('  📦 $packageName  $flutterIcon $registrantIcon');
 
     if (sortedFiles.isEmpty) {
-      stdout.write('\n');
+      stdout.writeln('     ${'No files sorted'.gray()}');
+    } else {
+      for (int i = 0; i < sortedFiles.length; i++) {
+        final file = dartFiles[sortedFiles[i]];
+        final relativePath = file?.path.replaceFirst(packagePath, '') ?? '';
+        stdout.writeln('     $success ${relativePath.replaceFirst('/', '')}');
+      }
     }
-    stdout.write(
-        '┗━━ $success Sorted ${sortedFiles.length} files in ${stopwatch.elapsed.inSeconds}.${stopwatch.elapsedMilliseconds} seconds\n');
+    stdout.writeln('');
 
     final String totalTime = '${stopwatch.elapsed.inSeconds}.${stopwatch.elapsedMilliseconds.toString().padLeft(3, '0')}s';
 
     // Final summary with emphasis for single package
-    stdout.writeln('');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
     stdout.writeln('  ✨ ${'SUMMARY'.green().bold()}');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
     stdout.writeln('  📝 Files sorted: ${sortedFiles.length.toString().green().bold()}');
+    stdout.writeln('  🚫 Files ignored: ${ignoredFilesList.length.toString().green().bold()}');
     stdout.writeln('  ⏱️  Time elapsed: ${totalTime.green().bold()}');
     stdout.writeln('═══════════════════════════════════════════════════════════'.gray());
+
+    // List ignored files if requested
+    if (listIgnored && ignoredFilesList.isNotEmpty) {
+      stdout.writeln('  📋 ${'Ignored files:'.yellow()}');
+      for (final file in ignoredFilesList) {
+        var displayPath = file.replaceFirst(packagePath, '');
+        if (displayPath.startsWith('/') || displayPath.startsWith('\\')) {
+          displayPath = displayPath.substring(1);
+        }
+        // Normalize to forward slashes for consistent display
+        displayPath = displayPath.replaceAll('\\', '/');
+        stdout.writeln('     ${'✕'.yellow()} $displayPath');
+      }
+    }
+
     stdout.writeln('');
   }
 
-  return sortedFiles.length;
+  return ProcessResult(sortedFiles.length, ignoredFilesList);
 }
 
 /// Get workspace root configuration from pubspec.yaml
@@ -440,4 +566,83 @@ List<FileSystemEntity> _readDirLocal(String currentPath, String name) {
     return Directory('$currentPath/$name').listSync(recursive: true);
   }
   return [];
+}
+
+/// Load patterns from .gitignore file
+List<String> _loadGitignorePatterns(String packagePath) {
+  final patterns = <String>[];
+
+  final gitignoreFile = File('$packagePath/.gitignore');
+  if (!gitignoreFile.existsSync()) {
+    return patterns;
+  }
+
+  try {
+    final lines = gitignoreFile.readAsLinesSync();
+    for (final line in lines) {
+      final trimmed = line.trim();
+      // Skip empty lines and comments
+      if (trimmed.isEmpty || trimmed.startsWith('#')) {
+        continue;
+      }
+      // Only include patterns that could match .dart files
+      if (trimmed.endsWith('.dart') ||
+          trimmed.contains('*') ||
+          trimmed.endsWith('/') ||
+          !trimmed.contains('.')) {
+        patterns.add(trimmed);
+      }
+    }
+  } catch (e) {
+    // Ignore errors reading .gitignore
+  }
+
+  return patterns;
+}
+
+/// Check if a file path matches a gitignore pattern
+bool _matchesGitignorePattern(String filePath, String pattern) {
+  // Handle negation patterns (we skip them)
+  if (pattern.startsWith('!')) {
+    return false;
+  }
+
+  // Remove leading slash if present
+  var cleanPattern = pattern.startsWith('/') ? pattern.substring(1) : pattern;
+
+  // Handle directory patterns (ending with /)
+  if (cleanPattern.endsWith('/')) {
+    cleanPattern = cleanPattern.substring(0, cleanPattern.length - 1);
+    // Check if file is inside this directory
+    return filePath.startsWith('$cleanPattern/') || filePath.contains('/$cleanPattern/');
+  }
+
+  // Handle ** patterns (match any path)
+  if (cleanPattern.contains('**')) {
+    final regexPattern = cleanPattern
+        .replaceAll('.', r'\.')
+        .replaceAll('**/', '.*')
+        .replaceAll('**', '.*')
+        .replaceAll('*', '[^/]*')
+        .replaceAll('?', '.');
+    return RegExp('^$regexPattern\$').hasMatch(filePath) ||
+           RegExp(regexPattern).hasMatch(filePath);
+  }
+
+  // Handle simple * patterns
+  if (cleanPattern.contains('*')) {
+    final regexPattern = cleanPattern
+        .replaceAll('.', r'\.')
+        .replaceAll('*', '[^/]*')
+        .replaceAll('?', '.');
+    // Match anywhere in the path
+    return RegExp(regexPattern).hasMatch(filePath);
+  }
+
+  // Handle patterns without wildcards
+  // Match if file path contains the pattern as a directory or file name
+  return filePath == cleanPattern ||
+         filePath.endsWith('/$cleanPattern') ||
+         filePath.startsWith('$cleanPattern/') ||
+         filePath.contains('/$cleanPattern/');
 }
